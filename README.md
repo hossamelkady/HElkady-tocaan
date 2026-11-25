@@ -89,6 +89,7 @@ The method is then accepted by `POST /api/payments` automatically.
 ### Notes
 
 - The gateways are mocks. They always return a successful result and do not call a real provider.
+- Not verified against any real provider sandbox. Payment creation locks the order row inside a transaction so concurrent requests cannot both succeed for one order; this needs a MySQL or PostgreSQL database to be fully effective (SQLite serializes writes anyway).
 - All payments use `USD`.
 - Default database is SQLite. Change `DB_*` in `.env` for MySQL or PostgreSQL.
 

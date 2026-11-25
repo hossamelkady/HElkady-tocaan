@@ -8,6 +8,7 @@ use App\Services\Payment\PaymentGatewayFactory;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
@@ -29,38 +30,41 @@ class PaymentController extends Controller
             return response()->json($validator->errors(), 422);
         }
 
-        $order = Order::where('user_id', Auth::id())->find($request->order_id);
-
-        if (!$order) {
-            return response()->json(['error' => 'Order not found'], 404);
-        }
-
-        if ($order->status !== Order::STATUS_CONFIRMED) {
-            return response()->json(['error' => 'Payments can only be processed for confirmed orders'], 400);
-        }
-
-        if ($order->payments()->where('status', 'successful')->exists()) {
-            return response()->json(['error' => 'Order is already paid'], 409);
-        }
-
         try {
-            $amount = (float) $order->total_amount; // Charging the full amount
-            $details = $request->except(['order_id', 'payment_method']);
+            // Lock the order row so concurrent requests for the same order are serialized.
+            return DB::transaction(function () use ($request) {
+                $order = Order::where('user_id', Auth::id())->lockForUpdate()->find($request->order_id);
 
-            $result = $this->paymentService->processPayment($request->payment_method, $amount, $details);
+                if (!$order) {
+                    return response()->json(['error' => 'Order not found'], 404);
+                }
 
-            $payment = Payment::create([
-                'order_id' => $order->id,
-                'transaction_id' => $result['transaction_id'] ?? null,
-                'payment_method' => $request->payment_method,
-                'status' => $result['status'], // pending, successful, failed
-                'amount' => $amount,
-                'currency' => 'USD',
-            ]);
+                if ($order->status !== Order::STATUS_CONFIRMED) {
+                    return response()->json(['error' => 'Payments can only be processed for confirmed orders'], 400);
+                }
 
-            return response()->json($payment, 201);
+                if ($order->payments()->whereIn('status', ['successful', 'pending'])->exists()) {
+                    return response()->json(['error' => 'Order is already paid or has a payment in progress'], 409);
+                }
+
+                $amount = (float) $order->total_amount; // Charging the full amount
+                $details = $request->except(['order_id', 'payment_method']);
+
+                $result = $this->paymentService->processPayment($request->payment_method, $amount, $details);
+
+                $payment = Payment::create([
+                    'order_id' => $order->id,
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'payment_method' => $request->payment_method,
+                    'status' => $result['status'], // pending, successful, failed
+                    'amount' => $amount,
+                    'currency' => 'USD',
+                ]);
+
+                return response()->json($payment, 201);
+            });
         } catch (Throwable $e) {
-            Log::error('Payment processing failed', ['order_id' => $order->id, 'error' => $e->getMessage()]);
+            Log::error('Payment processing failed', ['order_id' => $request->order_id, 'error' => $e->getMessage()]);
 
             return response()->json(['error' => 'Payment processing failed'], 500);
         }

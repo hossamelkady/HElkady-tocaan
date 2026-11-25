@@ -11,16 +11,6 @@ use Illuminate\Support\Facades\Validator;
 class AuthController extends Controller
 {
     /**
-     * Create a new AuthController instance.
-     *
-     * @return void
-     */
-    public function __construct()
-    {
-        // $this->middleware('auth:api', ['except' => ['login', 'register']]); // Middleware will be applied in routes or here
-    }
-
-    /**
      * Register a User.
      *
      * @return \Illuminate\Http\JsonResponse
@@ -34,7 +24,7 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors()->toJson(), 400);
+            return response()->json($validator->errors(), 422);
         }
 
         $user = User::create([
@@ -58,7 +48,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
-            'password' => 'required|string|min:6',
+            'password' => 'required|string',
         ]);
 
         if ($validator->fails()) {

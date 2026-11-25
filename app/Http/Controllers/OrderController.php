@@ -50,6 +50,7 @@ class OrderController extends Controller
             foreach ($request->items as $item) {
                 $totalAmount += $item['quantity'] * $item['price'];
             }
+            $totalAmount = round($totalAmount, 2);
 
             $order = Order::create([
                 'user_id' => Auth::id(),
@@ -100,20 +101,23 @@ class OrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
-        // Only allow updating details if not confirmed/cancelled? 
-        // User didn't specify logic but typically modifications are restricted.
-        // Assuming we can update status or items.
-        // "Update Order: Modify existing order details."
-
         $validator = Validator::make($request->all(), [
-            'status' => 'in:pending,confirmed,cancelled',
+            'status' => 'required|in:pending,confirmed,cancelled',
         ]);
 
         if ($validator->fails()) {
             return response()->json($validator->errors(), 422);
         }
 
-        $order->update($request->only('status'));
+        $newStatus = $request->status;
+
+        if ($newStatus !== $order->status && !$order->canMoveTo($newStatus)) {
+            return response()->json([
+                'error' => "Cannot change order status from {$order->status} to {$newStatus}",
+            ], 422);
+        }
+
+        $order->update(['status' => $newStatus]);
 
         return response()->json($order);
     }

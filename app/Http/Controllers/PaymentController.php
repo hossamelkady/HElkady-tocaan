@@ -4,26 +4,25 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\Payment\PaymentGatewayFactory;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Throwable;
 
 class PaymentController extends Controller
 {
-    protected $paymentService;
-
-    public function __construct(PaymentService $paymentService)
+    public function __construct(protected PaymentService $paymentService)
     {
-        $this->paymentService = $paymentService;
     }
 
     public function process(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'order_id' => 'required|exists:orders,id',
-            'payment_method' => 'required|string', // credit_card, paypal
-            // 'amount' could be passed or taken from order total
+            'order_id' => 'required|integer|exists:orders,id',
+            'payment_method' => 'required|string|in:' . implode(',', PaymentGatewayFactory::supported()),
         ]);
 
         if ($validator->fails()) {
@@ -36,14 +35,16 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
-        if ($order->status !== 'confirmed') {
+        if ($order->status !== Order::STATUS_CONFIRMED) {
             return response()->json(['error' => 'Payments can only be processed for confirmed orders'], 400);
         }
 
-        // Check if fully paid? (Optional, but good practice. For now assuming multiple payments allowed or just one)
+        if ($order->payments()->where('status', 'successful')->exists()) {
+            return response()->json(['error' => 'Order is already paid'], 409);
+        }
 
         try {
-            $amount = $order->total_amount; // Charging the full amount
+            $amount = (float) $order->total_amount; // Charging the full amount
             $details = $request->except(['order_id', 'payment_method']);
 
             $result = $this->paymentService->processPayment($request->payment_method, $amount, $details);
@@ -58,8 +59,10 @@ class PaymentController extends Controller
             ]);
 
             return response()->json($payment, 201);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+        } catch (Throwable $e) {
+            Log::error('Payment processing failed', ['order_id' => $order->id, 'error' => $e->getMessage()]);
+
+            return response()->json(['error' => 'Payment processing failed'], 500);
         }
     }
 
@@ -73,9 +76,7 @@ class PaymentController extends Controller
             $query->where('order_id', $request->order_id);
         }
 
-        $payments = $query->paginate(10);
-
-        return response()->json($payments);
+        return response()->json($query->paginate(10));
     }
 
     public function show($id)

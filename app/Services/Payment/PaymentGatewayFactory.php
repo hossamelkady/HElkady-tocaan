@@ -8,12 +8,27 @@ use InvalidArgumentException;
 
 class PaymentGatewayFactory
 {
+    /**
+     * Payment method name => gateway class. Add new gateways here.
+     */
+    private const GATEWAYS = [
+        'credit_card' => CreditCardGateway::class,
+        'paypal' => PayPalGateway::class,
+    ];
+
+    /**
+     * @return list<string>
+     */
+    public static function supported(): array
+    {
+        return array_keys(self::GATEWAYS);
+    }
+
     public static function create(string $method): PaymentGatewayInterface
     {
-        return match ($method) {
-            'credit_card' => new CreditCardGateway(),
-            'paypal' => new PayPalGateway(),
-            default => throw new InvalidArgumentException("Payment method {$method} is not supported."),
-        };
+        $class = self::GATEWAYS[$method]
+            ?? throw new InvalidArgumentException("Payment method {$method} is not supported.");
+
+        return new $class();
     }
 }

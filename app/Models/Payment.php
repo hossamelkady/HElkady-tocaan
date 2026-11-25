@@ -8,6 +8,10 @@ class Payment extends Model
 {
     protected $fillable = ['order_id', 'transaction_id', 'payment_method', 'status', 'amount', 'currency'];
 
+    protected $casts = [
+        'amount' => 'decimal:2',
+    ];
+
     public function order()
     {
         return $this->belongsTo(Order::class);

@@ -40,4 +40,17 @@ class PaymentGatewayTest extends TestCase
         $this->assertArrayHasKey('transaction_id', $result);
         $this->assertEquals('successful', $result['status']);
     }
+
+    public function test_paypal_gateway_process_returns_success_structure()
+    {
+        $result = (new PayPalGateway())->process(25.50, []);
+
+        $this->assertEquals('successful', $result['status']);
+        $this->assertStringStartsWith('pp_', $result['transaction_id']);
+    }
+
+    public function test_factory_lists_supported_methods()
+    {
+        $this->assertSame(['credit_card', 'paypal'], PaymentGatewayFactory::supported());
+    }
 }
